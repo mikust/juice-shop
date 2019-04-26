@@ -7,8 +7,10 @@ engines:
     enabled: true
 ratings:
   paths:
+    - '**.ts'
     - '**.js'
     - '**.css'
+    - '**.scss'
 checks:
   method-complexity:
     config:
@@ -18,9 +20,7 @@ checks:
   identical-code:
     enabled: false
 exclude_paths:
-  - 'app/private/**/*'
-  - 'app/css/geo-bootstrap/**/*'
   - 'data/datacreator.js'
-  - 'vagrant/shake.js'
+  - 'frontend/src/assets/private/**/*'
   - 'Gruntfile.js'
-  - '*conf.js'
+  - '**/*conf.js'

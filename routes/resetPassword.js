@@ -17,15 +17,15 @@ module.exports = function resetPassword () {
     } else if (newPassword !== repeatPassword) {
       res.status(401).send('New and repeated password do not match.')
     } else {
-      models.SecurityAnswer.find({
+      models.SecurityAnswer.findOne({
         include: [{
           model: models.User,
           where: { email }
         }]
       }).then(data => {
         if (insecurity.hmac(answer) === data.answer) {
-          models.User.findById(data.UserId).then(user => {
-            user.updateAttributes({ password: newPassword }).then(user => {
+          models.User.findByPk(data.UserId).then(user => {
+            user.update({ password: newPassword }).then(user => {
               if (utils.notSolved(challenges.resetPasswordJimChallenge) && user.id === users.jim.id && answer === 'Samuel') {
                 utils.solve(challenges.resetPasswordJimChallenge)
               }
@@ -37,6 +37,9 @@ module.exports = function resetPassword () {
               }
               if (utils.notSolved(challenges.resetPasswordMortyChallenge) && user.id === users.morty.id && answer === '5N0wb41L') {
                 utils.solve(challenges.resetPasswordMortyChallenge)
+              }
+              if (utils.notSolved(challenges.resetPasswordBjoernOwaspChallenge) && user.id === users.bjoernOwasp.id && answer === 'Zaya') {
+                utils.solve(challenges.resetPasswordBjoernOwaspChallenge)
               }
               res.json({ user })
             }).catch(error => {

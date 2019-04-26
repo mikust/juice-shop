@@ -1,15 +1,14 @@
-const applicationRoot = __dirname.replace(/\\/g, '/')
 const path = require('path')
 const fs = require('fs-extra')
 const morgan = require('morgan')
 const colors = require('colors/safe')
-const epilogue = require('epilogue-js')
+const finale = require('finale-rest')
 const express = require('express')
+const compression = require('compression')
 const helmet = require('helmet')
 const errorhandler = require('errorhandler')
 const cookieParser = require('cookie-parser')
 const serveIndex = require('serve-index')
-const favicon = require('serve-favicon')
 const bodyParser = require('body-parser')
 const cors = require('cors')
 const securityTxt = require('express-security.txt')
@@ -21,16 +20,20 @@ const swaggerUi = require('swagger-ui-express')
 const RateLimit = require('express-rate-limit')
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yml', 'utf8'))
 const fileUpload = require('./routes/fileUpload')
+const profileImageFileUpload = require('./routes/profileImageFileUpload')
+const profileImageUrlUpload = require('./routes/profileImageUrlUpload')
 const redirect = require('./routes/redirect')
 const angular = require('./routes/angular')
 const easterEgg = require('./routes/easterEgg')
 const premiumReward = require('./routes/premiumReward')
+const privacyPolicyProof = require('./routes/privacyPolicyProof')
 const appVersion = require('./routes/appVersion')
 const repeatNotification = require('./routes/repeatNotification')
 const continueCode = require('./routes/continueCode')
 const restoreProgress = require('./routes/restoreProgress')
 const fileServer = require('./routes/fileServer')
 const keyServer = require('./routes/keyServer')
+const logFileServer = require('./routes/logfileServer')
 const authenticatedUsers = require('./routes/authenticatedUsers')
 const currentUser = require('./routes/currentUser')
 const login = require('./routes/login')
@@ -42,10 +45,13 @@ const coupon = require('./routes/coupon')
 const basket = require('./routes/basket')
 const order = require('./routes/order')
 const verify = require('./routes/verify')
+const recycles = require('./routes/recycles')
 const b2bOrder = require('./routes/b2bOrder')
 const showProductReviews = require('./routes/showProductReviews')
 const createProductReviews = require('./routes/createProductReviews')
 const updateProductReviews = require('./routes/updateProductReviews')
+const likeProductReviews = require('./routes/likeProductReviews')
+const logger = require('./lib/logger')
 const utils = require('./lib/utils')
 const insecurity = require('./lib/insecurity')
 const models = require('./models')
@@ -56,17 +62,33 @@ const appConfiguration = require('./routes/appConfiguration')
 const captcha = require('./routes/captcha')
 const trackOrder = require('./routes/trackOrder')
 const countryMapping = require('./routes/countryMapping')
+const basketItems = require('./routes/basketItems')
+const saveLoginIp = require('./routes/saveLoginIp')
+const userProfile = require('./routes/userProfile')
+const updateUserProfile = require('./routes/updateUserProfile')
+const videoHandler = require('./routes/videoHandler')
+const twoFactorAuth = require('./routes/2fa')
+const languageList = require('./routes/languages')
 const config = require('config')
+const imageCaptcha = require('./routes/imageCaptcha')
+const dataExport = require('./routes/dataExport')
 
-errorhandler.title = 'Juice Shop (Express ' + utils.version('express') + ')'
+errorhandler.title = `${config.get('application.name')} (Express ${utils.version('express')})`
 
+require('./lib/startup/validatePreconditions')()
 require('./lib/startup/validateConfig')()
 require('./lib/startup/cleanupFtpFolder')()
+require('./lib/startup/restoreOverwrittenFilesWithOriginals')()
 
 /* Locals */
 app.locals.captchaId = 0
 app.locals.captchaReqId = 1
 app.locals.captchaBypassReqTimes = []
+app.locals.abused_ssti_bug = false
+app.locals.abused_ssrf_bug = false
+
+/* Compression for all requests */
+app.use(compression())
 
 /* Bludgeon solution for possible CORS problems: Allow everything! */
 app.options('*', cors())
@@ -83,22 +105,9 @@ app.use((req, res, next) => {
   next()
 })
 
-/* Favicon */
-let icon = 'favicon_v2.ico'
-if (config.get('application.favicon')) {
-  icon = config.get('application.favicon')
-  if (utils.startsWith(icon, 'http')) {
-    const iconPath = icon
-    icon = decodeURIComponent(icon.substring(icon.lastIndexOf('/') + 1))
-    fs.closeSync(fs.openSync('app/public/' + icon, 'w')) // touch file so it is guaranteed to exist for favicon() call
-    utils.downloadToFile(iconPath, 'app/public/' + icon)
-  }
-}
-app.use(favicon(path.join(__dirname, 'app/public/' + icon)))
-
 /* Security Policy */
-app.get('/security.txt', verify.accessControlChallenges())
-app.use('/security.txt', securityTxt({
+app.get('/.well-known/security.txt', verify.accessControlChallenges())
+app.use('/.well-known/security.txt', securityTxt({
   contact: config.get('application.securityTxt.contact'),
   encryption: config.get('application.securityTxt.encryption'),
   acknowledgements: config.get('application.securityTxt.acknowledgements')
@@ -108,9 +117,12 @@ app.use('/security.txt', securityTxt({
 app.use(robots({ UserAgent: '*', Disallow: '/ftp' }))
 
 /* Checks for challenges solved by retrieving a file implicitly or explicitly */
-app.use('/public/images/tracking', verify.accessControlChallenges())
-app.use('/public/images/products', verify.accessControlChallenges())
-app.use('/i18n', verify.accessControlChallenges())
+app.use('/assets/public/images/padding', verify.accessControlChallenges())
+app.use('/assets/public/images/products', verify.accessControlChallenges())
+app.use('/assets/i18n', verify.accessControlChallenges())
+
+/* Checks for challenges solved by abusing SSTi and SSRF bugs */
+app.use('/solve/challenges/server-side', verify.serverSideChallenges())
 
 /* /ftp directory browsing and file download */
 app.use('/ftp', serveIndex('ftp', { 'icons': true }))
@@ -120,15 +132,37 @@ app.use('/ftp/:file', fileServer())
 app.use('/encryptionkeys', serveIndex('encryptionkeys', { 'icons': true, 'view': 'details' }))
 app.use('/encryptionkeys/:file', keyServer())
 
+/* /logs directory browsing */
+app.use('/support/logs', serveIndex('logs', { 'icons': true, 'view': 'details' }))
+app.use('/support/logs', verify.accessControlChallenges())
+app.use('/support/logs/:file', logFileServer())
+
 /* Swagger documentation for B2B v2 endpoints */
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument))
 
-app.use(express.static(applicationRoot + '/app'))
-app.use(cookieParser('kekse'))
-app.use(bodyParser.json())
+// app.use(express.static(applicationRoot + '/app'))
+app.use(express.static(path.join(__dirname, '/frontend/dist/frontend')))
 
+app.use(cookieParser('kekse'))
+
+app.use(bodyParser.urlencoded({ extended: true }))
+/* File Upload */
+app.post('/file-upload', upload.single('file'), fileUpload())
+app.post('/profile/image/file', upload.single('file'), profileImageFileUpload())
+app.post('/profile/image/url', upload.single('file'), profileImageUrlUpload())
+
+app.use(bodyParser.text({ type: '*/*' }))
+app.use(function jsonParser (req, res, next) {
+  req.rawBody = req.body
+  if (req.headers['content-type'] !== undefined && req.headers['content-type'].indexOf('application/json') > -1) {
+    if (req.body && req.body !== Object(req.body)) { // TODO Expensive workaround for 500 errors during Frisby test run (see #640)
+      req.body = JSON.parse(req.body)
+    }
+  }
+  next()
+})
 /* HTTP request logging */
-let accessLogStream = require('file-stream-rotator').getStream({ filename: './access.log', frequency: 'daily', verbose: false, max_logs: '2d' })
+let accessLogStream = require('file-stream-rotator').getStream({ filename: './logs/access.log', frequency: 'daily', verbose: false, max_logs: '2d' })
 app.use(morgan('combined', { stream: accessLogStream }))
 
 /* Rate limiting */
@@ -163,9 +197,12 @@ app.get('/api/Complaints', insecurity.isAuthorized())
 app.post('/api/Complaints', insecurity.isAuthorized())
 app.use('/api/Complaints/:id', insecurity.denyAll())
 /* Recycles: POST and GET allowed when logged in only */
-app.get('/api/Recycles', insecurity.isAuthorized())
+app.get('/api/Recycles', recycles.blockRecycleItems())
 app.post('/api/Recycles', insecurity.isAuthorized())
-app.use('/api/Recycles/:id', insecurity.denyAll())
+/* Challenge evaluation before finale takes over */
+app.get('/api/Recycles/:id', recycles.sequelizeVulnerabilityChallenge())
+app.put('/api/Recycles/:id', insecurity.denyAll())
+app.delete('/api/Recycles/:id', insecurity.denyAll())
 /* SecurityQuestions: Only GET list of questions allowed. */
 app.post('/api/SecurityQuestions', insecurity.denyAll())
 app.use('/api/SecurityQuestions/:id', insecurity.denyAll())
@@ -176,30 +213,66 @@ app.use('/api/SecurityAnswers/:id', insecurity.denyAll())
 app.use('/rest/user/authentication-details', insecurity.isAuthorized())
 app.use('/rest/basket/:id', insecurity.isAuthorized())
 app.use('/rest/basket/:id/order', insecurity.isAuthorized())
-/* Challenge evaluation before epilogue takes over */
+/* Challenge evaluation before finale takes over */
 app.post('/api/Feedbacks', verify.forgedFeedbackChallenge())
-/* Captcha verification before epilogue takes over */
-app.post('/api/Feedbacks', insecurity.verifyCaptcha())
+/* Captcha verification before finale takes over */
+app.post('/api/Feedbacks', captcha.verifyCaptcha())
 /* Captcha Bypass challenge verification */
 app.post('/api/Feedbacks', verify.captchaBypassChallenge())
+/* User registration challenge verifications before finale takes over */
+app.post('/api/Users', verify.registerAdminChallenge())
+app.post('/api/Users', verify.passwordRepeatChallenge())
 /* Unauthorized users are not allowed to access B2B API */
 app.use('/b2b/v2', insecurity.isAuthorized())
+/* Add item to basket */
+app.post('/api/BasketItems', basketItems())
 
-/* Verifying DB related challenges can be postponed until the next request for challenges is coming via epilogue */
+/* Verify the 2FA Token */
+app.post('/rest/2fa/verify',
+  new RateLimit({ windowMs: 5 * 60 * 1000, max: 100 }),
+  twoFactorAuth.verify()
+)
+/* Check 2FA Status for the current User */
+app.get('/rest/2fa/status', insecurity.isAuthorized(), twoFactorAuth.status())
+/* Enable 2FA for the current User */
+app.post('/rest/2fa/setup',
+  new RateLimit({ windowMs: 5 * 60 * 1000, max: 100 }),
+  insecurity.isAuthorized(),
+  twoFactorAuth.setup()
+)
+/* Disable 2FA Status for the current User */
+app.post('/rest/2fa/disable',
+  new RateLimit({ windowMs: 5 * 60 * 1000, max: 100 }),
+  insecurity.isAuthorized(),
+  twoFactorAuth.disable()
+)
+
+/* Verifying DB related challenges can be postponed until the next request for challenges is coming via finale */
 app.use(verify.databaseRelatedChallenges())
 
 /* Generated API endpoints */
-epilogue.initialize({ app, sequelize: models.sequelize })
+finale.initialize({ app, sequelize: models.sequelize })
 
-const autoModels = ['User', 'Product', 'Feedback', 'BasketItem', 'Challenge', 'Complaint', 'Recycle', 'SecurityQuestion', 'SecurityAnswer']
+const autoModels = [
+  { name: 'User', exclude: ['password', 'totpSecret'] },
+  { name: 'Product', exclude: [] },
+  { name: 'Feedback', exclude: [] },
+  { name: 'BasketItem', exclude: [] },
+  { name: 'Challenge', exclude: [] },
+  { name: 'Complaint', exclude: [] },
+  { name: 'Recycle', exclude: [] },
+  { name: 'SecurityQuestion', exclude: [] },
+  { name: 'SecurityAnswer', exclude: [] }
+]
 
-for (const modelName of autoModels) {
-  const resource = epilogue.resource({
-    model: models[modelName],
-    endpoints: [`/api/${modelName}s`, `/api/${modelName}s/:id`]
+for (const { name, exclude } of autoModels) {
+  const resource = finale.resource({
+    model: models[name],
+    endpoints: [`/api/${name}s`, `/api/${name}s/:id`],
+    excludeAttributes: exclude
   })
 
-  // fix the api difference between epilogue and previously used sequlize-restful
+  // fix the api difference between finale (fka epilogue) and previously used sequlize-restful
   resource.all.send.before((req, res, context) => {
     context.instance = {
       status: 'success',
@@ -228,23 +301,36 @@ app.put('/rest/continue-code/apply/:continueCode', restoreProgress())
 app.get('/rest/admin/application-version', appVersion())
 app.get('/redirect', redirect())
 app.get('/rest/captcha', captcha())
+app.get('/rest/image-captcha', imageCaptcha())
 app.get('/rest/track-order/:id', trackOrder())
 app.get('/rest/country-mapping', countryMapping())
+app.get('/rest/saveLoginIp', saveLoginIp())
+app.post('/rest/data-export', imageCaptcha.verifyCaptcha())
+app.post('/rest/data-export', dataExport())
+app.get('/rest/languages', languageList())
 
 /* NoSQL API endpoints */
 app.get('/rest/product/:id/reviews', showProductReviews())
 app.put('/rest/product/:id/reviews', createProductReviews())
 app.patch('/rest/product/reviews', insecurity.isAuthorized(), updateProductReviews())
+app.post('/rest/product/reviews', insecurity.isAuthorized(), likeProductReviews())
 
 /* B2B Order API */
 app.post('/b2b/v2/orders', b2bOrder())
 
-/* File Upload */
-app.post('/file-upload', upload.single('file'), fileUpload())
-
 /* File Serving */
 app.get('/the/devs/are/so/funny/they/hid/an/easter/egg/within/the/easter/egg', easterEgg())
 app.get('/this/page/is/hidden/behind/an/incredibly/high/paywall/that/could/only/be/unlocked/by/sending/1btc/to/us', premiumReward())
+app.get('/we/may/also/instruct/you/to/refuse/all/reasonably/necessary/responsibility', privacyPolicyProof())
+
+/* Routes for promotion video page */
+app.get('/promotion', videoHandler.promotionVideo())
+app.get('/video', videoHandler.getVideo())
+
+/* Routes for profile page */
+app.get('/profile', userProfile())
+app.post('/profile', updateUserProfile())
+
 app.use(angular())
 
 /* Error Handling */
@@ -256,21 +342,20 @@ exports.start = async function (readyCallback) {
   await datacreator()
 
   server.listen(process.env.PORT || config.get('server.port'), () => {
-    console.log(colors.yellow('Server listening on port %d'), config.get('server.port'))
+    logger.info(colors.cyan(`Server listening on port ${config.get('server.port')}`))
     require('./lib/startup/registerWebsocketEvents')(server)
     if (readyCallback) {
       readyCallback()
     }
   })
 
-  require('./lib/startup/populateIndexTemplate')()
-  require('./lib/startup/populateThreeJsTemplate')()
+  require('./lib/startup/customizeApplication')()
+  require('./lib/startup/customizeEasterEgg')()
 }
 
 exports.close = function (exitCode) {
-  if (this.server) {
-    this.server.close(exitCode)
-  } else {
-    process.exit(exitCode)
+  if (server) {
+    server.close(exitCode)
   }
+  process.exit(exitCode)
 }

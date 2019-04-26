@@ -4,15 +4,18 @@ application:
   domain: juice-sh.op
   name: 'OWASP Juice Shop'
   logo: JuiceShop_Logo.png
-  favicon: favicon_v2.ico
+  favicon: favicon_js.ico
   numberOfRandomFakeUsers: 0
   showChallengeSolvedNotifications: true
   showChallengeHints: true
   showVersionNumber: true
-  theme: slate # Options: cerulean  cosmo  cyborg  darkly  flatly lumen  paper  readable  sandstone  simplex  slate  spacelab  superhero  united  yeti
-  gitHubRibbon: orange # Options: darkblue  gray  green  orange  red  white  none
+  theme: bluegrey-lightgreen # Options: bluegrey-lightgreen blue-lightblue deeppurple-amber indigo-pink pink-bluegrey purple-green deeporange-indigo
+  gitHubRibbon: true
   twitterUrl: 'https://twitter.com/owasp_juiceshop'
   facebookUrl: 'https://www.facebook.com/owasp.juiceshop'
+  slackUrl: 'http://owaspslack.com'
+  redditUrl: 'https://www.reddit.com/r/owasp_juiceshop'
+  pressKitUrl: 'https://github.com/OWASP/owasp-swag/tree/master/projects/juice-shop'
   planetOverlayMap: orangemap2k.jpg
   planetName: Orangeuze
   recyclePage:
@@ -20,18 +23,25 @@ application:
     bottomProductImage: apple_pressings.jpg
   altcoinName: Juicycoin
   cookieConsent:
-    backgroundColor: '#eb6c44'
+    backgroundColor: '#546e7a'
     textColor: '#ffffff'
-    buttonColor: '#f5d948'
-    buttonTextColor: '#000000'
+    buttonColor: '#558b2f'
+    buttonTextColor: '#ffffff'
     message: 'This website uses fruit cookies to ensure you get the juiciest tracking experience.'
     dismissText: 'Me want it!'
     linkText: 'But me wait!'
     linkUrl: 'https://www.youtube.com/watch?v=9PnbKL3wuH4'
+  privacyContactEmail: donotreply@owasp-juice.shop
   securityTxt:
     contact: 'mailto:donotreply@owasp-juice.shop'
     encryption: 'https://keybase.io/bkimminich/pgp_keys.asc?fingerprint=19c01cb7157e4645e9e2c863062a85a8cbfbdcda'
     acknowledgements: '/#/score-board'
+  promotion:
+    video: JuiceShopJingle.mp4
+    subtitles: JuiceShopJingle.vtt
+challenges:
+  safetyOverride: false
+  overwriteUrlForProductTamperingChallenge: 'https://owasp.slack.com'
 products:
   -
     name: 'Apple Juice (1000ml)'
@@ -91,6 +101,14 @@ products:
     price: 29.99
     image: undefined.jpg
     useForChristmasSpecialChallenge: true
+  -
+    name: 'Rippertuer Special Juice'
+    description: 'Contains a magical collection of the rarest fruits gathered from all around the world, like Cherymoya Annona cherimola, Jabuticaba Myrciaria cauliflora, Bael Aegle marmelos... and others, at an unbelievable price! <br/><span style="color:red;">This item has been made unavailable because of lack of safety standards.</span>'
+    price: 16.99
+    image: undefined.jpg
+    keywordsForPastebinDataLeakChallenge:
+      - hueteroneel
+      - eurogium edule
   -
     name: 'OWASP Juice Shop Sticker (2015/2016 design)'
     description: 'Die-cut sticker with the official 2015/2016 logo. By now this is a rare collectors item. <em>Out of stock!</em>'
@@ -214,8 +232,12 @@ products:
     description: 'The wheels of this bicycle are made from real water melons. You might not want to ride it up/down the curb too hard.'
     price: 2999
     image: melon_bike.jpeg
+  -
+    name: 'OWASP Juice Shop Coaster (10pcs)'
+    description: 'Our 95mm circle coasters are printed in full color and made from thick, premium coaster board.'
+    price: 19.99
+    image: coaster.png
 ctf:
-  countryMapping: ~
   showFlagsInNotifications: false
   showCountryDetailsInNotifications: none # Options: none  name  flag  both
-  
+  countryMapping: ~

@@ -3,7 +3,7 @@ application:
   favicon: favicon_ctf.ico
   showChallengeHints: false
   showVersionNumber: false
-  gitHubRibbon: none
+  gitHubRibbon: false
 ctf:
   showFlagsInNotifications: true
   showCountryDetailsInNotifications: both
@@ -14,6 +14,9 @@ ctf:
     errorHandlingChallenge:
       name: Austria
       code: AT
+    forgedReviewChallenge:
+      name: Israel
+      code: IL
     loginAdminChallenge:
       name: Russian Federation
       code: RU
@@ -56,7 +59,7 @@ ctf:
     redirectChallenge:
       name: Belarus
       code: BY
-    basketChallenge:
+    basketAccessChallenge:
       name: Bolivia
       code: BO
     negativeOrderChallenge:
@@ -74,7 +77,7 @@ ctf:
     adminSectionChallenge:
       name: Turkey
       code: TR
-    csrfChallenge:
+    changePasswordBenderChallenge:
       name: Suriname
       code: SR
     changeProductChallenge:
@@ -95,9 +98,6 @@ ctf:
     forgedCouponChallenge:
       name: Panama
       code: PA
-    geocitiesThemeChallenge:
-      name: Hungary
-      code: HU
     christmasSpecialChallenge:
       name: Falkland Islands (Malvinas)
       code: FK
@@ -107,6 +107,9 @@ ctf:
     uploadTypeChallenge:
       name: Saudi Arabia
       code: SA
+    fileWriteChallenge:
+      name: Iran
+      code: IR
     extraLanguageChallenge:
       name: Australia
       code: AU
@@ -149,16 +152,19 @@ ctf:
     noSqlCommandChallenge:
       name: Trinidad and Tobago
       code: TT
-    noSqlInjectionChallenge:
+    noSqlReviewsChallenge:
       name: United Arab Emirates
       code: AE
+    noSqlOrdersChallenge:
+      name: Estonia
+      code: EE
     retrieveBlueprintChallenge:
       name: Venezuela
       code: VE
     typosquattingNpmChallenge:
       name: Nicaragua
       code: NI
-    typosquattingBowerChallenge:
+    typosquattingAngularChallenge:
       name: Senegal
       code: SN
     jwtTier1Challenge:
@@ -197,4 +203,63 @@ ctf:
     supplyChainAttackChallenge:
       name: Togo
       code: TG
-
+    timingAttackChallenge:
+      name: Egypt
+      code: EG
+    basketManipulateChallenge:
+      name: Bhutan
+      code: BT
+    emailLeakChallenge:
+      name: Bahamas
+      code: BH
+    registerAdminChallenge:
+      name: Jamaica
+      code: JA
+    httpHeaderXssChallenge:
+      name: Puerto Rico
+      code: PR
+    sstiChallenge:
+      name: Indonesia
+      code: ID
+    ssrfChallenge:
+      name: Thailand
+      code: TH
+    loginAmyChallenge:
+      name: Andorra
+      code: AD
+    usernameXssChallenge:
+      name: Azerbaijan
+      code: AZ
+    resetPasswordBjoernOwaspChallenge:
+      name: Kazakhstan
+      code: KZ
+    accessLogDisclosureChallenge:
+      name: Singapore
+      code: SG
+    dlpPasswordSprayingChallenge:
+      name: Chad
+      code: TD
+    dlpPastebinDataLeakChallenge:
+      name: Turkmenistan
+      code: TK
+    videoXssChallenge:
+      name: Pakistan
+      code: PK
+    recyclesMissingItemChallenge:
+      name: Uganda
+      code: UG
+    twoFactorAuthUnsafeSecretStorageChallenge:
+      name: Sweden
+      code: SE
+    manipulateClockChallenge:
+      name: Vatican City
+      code: VC
+    privacyPolicyChallenge:
+      name: Cameroon
+      code: CM
+    privacyPolicyProofChallenge:
+      name: Namibia
+      code: NA
+    passwordRepeatChallenge:
+      name: Guyana
+      code: GY

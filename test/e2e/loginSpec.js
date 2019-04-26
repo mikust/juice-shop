@@ -1,13 +1,14 @@
 const config = require('config')
+const otplib = require('otplib')
 
 describe('/#/login', () => {
   let email, password, rememberMeCheckbox, loginButton
 
   beforeEach(() => {
     browser.get('/#/login')
-    email = element(by.model('user.email'))
-    password = element(by.model('user.password'))
-    rememberMeCheckbox = element(by.model('rememberMe'))
+    email = element(by.id('email'))
+    password = element(by.id('password'))
+    rememberMeCheckbox = element(by.id('rememberMe-input'))
     loginButton = element(by.id('loginButton'))
   })
 
@@ -77,10 +78,56 @@ describe('/#/login', () => {
     protractor.expect.challengeSolved({ challenge: 'Login MC SafeSearch' })
   })
 
+  describe('challenge "loginAmy"', () => {
+    it('should be able to log in with original Amy credentials', () => {
+      email.sendKeys('amy@' + config.get('application.domain'))
+      password.sendKeys('K1f.....................')
+      loginButton.click()
+    })
+
+    protractor.expect.challengeSolved({ challenge: 'Login Amy' })
+  })
+
+  describe('challenge "dlpPasswordSpraying"', () => {
+    it('should be able to log in with original Jannik credentials', () => {
+      email.sendKeys('J12934@' + config.get('application.domain'))
+      password.sendKeys('0Y8rMnww$*9VFYE§59-!Fg1L6t&6lB')
+      loginButton.click()
+    })
+
+    protractor.expect.challengeSolved({ challenge: 'DLP Failure Tier 2' })
+  })
+
+  describe('challenge "twoFactorAuthUnsafeSecretStorage"', () => {
+    const EC = protractor.ExpectedConditions
+    let twoFactorTokenInput
+    let twoFactorSubmitButton
+
+    beforeEach(() => {
+      twoFactorTokenInput = element(by.id('totpToken'))
+      twoFactorSubmitButton = element(by.id('totpSubmitButton'))
+    })
+
+    it('should be able to log into a exsisting 2fa protected account given the right token', () => {
+      email.sendKeys('wurstbrot@' + config.get('application.domain') + '\'--')
+      password.sendKeys('Never mind...')
+      loginButton.click()
+
+      browser.wait(EC.visibilityOf(twoFactorTokenInput), 1000, '2FA token field did not become visible')
+
+      const totpToken = otplib.authenticator.generate('IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH')
+      twoFactorTokenInput.sendKeys(totpToken)
+
+      twoFactorSubmitButton.click()
+    })
+
+    protractor.expect.challengeSolved({ challenge: 'Two Factor Authentication' })
+  })
+
   describe('challenge "oauthUserPassword"', () => {
     it('should be able to log in as bjoern.kimminich@googlemail.com with base64-encoded email as password', () => {
       email.sendKeys('bjoern.kimminich@googlemail.com')
-      password.sendKeys('YmpvZXJuLmtpbW1pbmljaEBnb29nbGVtYWlsLmNvbQ==')
+      password.sendKeys('bW9jLmxpYW1lbGdvb2dAaGNpbmltbWlrLm5yZW9qYg==')
       loginButton.click()
     })
 
@@ -91,10 +138,11 @@ describe('/#/login', () => {
     it('should be able to log in as ciso@juice-sh.op by using "Remember me" in combination with (fake) OAuth login with another user', () => {
       email.sendKeys('ciso@' + config.get('application.domain'))
       password.sendKeys('wrong')
+      browser.executeScript('document.getElementById("rememberMe-input").removeAttribute("class");')
       rememberMeCheckbox.click()
       loginButton.click()
 
-      browser.executeScript('var $http = angular.element(document.body).injector().get(\'$http\'); $http.post(\'/rest/user/login\', {email: \'admin@juice-sh.op\', password: \'admin123\', oauth: true});')
+      browser.executeScript('var xhttp = new XMLHttpRequest(); xhttp.onreadystatechange = function() { if (this.status == 200) { console.log("Success"); }}; xhttp.open("POST","http://localhost:3000/rest/user/login", true); xhttp.setRequestHeader("Content-type","application/json"); xhttp.setRequestHeader("Authorization",`Bearer ${localStorage.getItem("token")}`); xhttp.setRequestHeader("X-User-Email", localStorage.getItem("email")); xhttp.send(JSON.stringify({email: "admin@juice-sh.op", password: "admin123", oauth: true}));') // eslint-disable-line
 
       // Deselect to clear email field for subsequent tests
       rememberMeCheckbox.click()

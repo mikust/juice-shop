@@ -1,4 +1,5 @@
 const config = require('config')
+const utils = require('../../lib/utils')
 let blueprint
 
 for (const product of config.get('products')) {
@@ -25,22 +26,17 @@ describe('/', () => {
     protractor.expect.challengeSolved({ challenge: 'Premium Paywall' })
   })
 
-  describe('challenge "geocitiesTheme"', () => {
-    it('should be possible to change the CSS theme to geo-bootstrap', () => {
-      browser.waitForAngularEnabled(false)
-      browser.executeScript('document.getElementById("theme").setAttribute("href", "css/geo-bootstrap/swatch/bootstrap.css");')
-      browser.driver.sleep(1000)
-      browser.waitForAngularEnabled(true)
-
-      browser.get('/#/search')
+  describe('challenge "privacyPolicyProof"', () => {
+    it('should be able to access proof url for reading the privacy policy', () => {
+      browser.driver.get(browser.baseUrl + '/we/may/also/instruct/you/to/refuse/all/reasonably/necessary/responsibility')
     })
 
-    protractor.expect.challengeSolved({ challenge: 'Eye Candy' })
+    protractor.expect.challengeSolved({ challenge: 'Privacy Policy Tier 2' })
   })
 
   describe('challenge "extraLanguage"', () => {
     it('should be able to access the Klingon translation file', () => {
-      browser.driver.get(browser.baseUrl + '/i18n/tlh_AA.json')
+      browser.driver.get(browser.baseUrl + '/assets/i18n/tlh_AA.json')
     })
 
     protractor.expect.challengeSolved({ challenge: 'Extra Language' })
@@ -48,7 +44,7 @@ describe('/', () => {
 
   describe('challenge "retrieveBlueprint"', () => {
     it('should be able to access the blueprint file', () => {
-      browser.driver.get(browser.baseUrl + '/public/images/products/' + blueprint)
+      browser.driver.get(browser.baseUrl + '/assets/public/images/products/' + blueprint)
     })
 
     protractor.expect.challengeSolved({ challenge: 'Retrieve Blueprint' })
@@ -56,9 +52,25 @@ describe('/', () => {
 
   describe('challenge "securityPolicy"', () => {
     it('should be able to access the security.txt file', () => {
-      browser.driver.get(browser.baseUrl + '/security.txt')
+      browser.driver.get(browser.baseUrl + '/.well-known/security.txt')
     })
 
     protractor.expect.challengeSolved({ challenge: 'Security Policy' })
+  })
+
+  describe('challenge "emailLeak"', () => {
+    it('should be able to request the callback on /rest/user/whoami', () => {
+      browser.driver.get(browser.baseUrl + '/rest/user/whoami?callback=func')
+    })
+
+    protractor.expect.challengeSolved({ challenge: 'Email Leak' })
+  })
+
+  describe('challenge "accessLogDisclosure"', () => {
+    it('should be able to access today\'s access log file', () => {
+      browser.driver.get(browser.baseUrl + '/support/logs/access.log.' + utils.toISO8601(new Date()))
+    })
+
+    protractor.expect.challengeSolved({ challenge: 'Access Log' })
   })
 })

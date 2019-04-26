@@ -35,7 +35,13 @@ module.exports = function login () {
     if (utils.notSolved(challenges.loginRapperChallenge) && req.body.email === 'mc.safesearch@' + config.get('application.domain') && req.body.password === 'Mr. N00dles') {
       utils.solve(challenges.loginRapperChallenge)
     }
-    if (utils.notSolved(challenges.oauthUserPasswordChallenge) && req.body.email === 'bjoern.kimminich@googlemail.com' && req.body.password === 'YmpvZXJuLmtpbW1pbmljaEBnb29nbGVtYWlsLmNvbQ==') {
+    if (utils.notSolved(challenges.loginAmyChallenge) && req.body.email === 'amy@' + config.get('application.domain') && req.body.password === 'K1f.....................') {
+      utils.solve(challenges.loginAmyChallenge)
+    }
+    if (utils.notSolved(challenges.dlpPasswordSprayingChallenge) && req.body.email === 'J12934@' + config.get('application.domain') && req.body.password === '0Y8rMnww$*9VFYE§59-!Fg1L6t&6lB') {
+      utils.solve(challenges.dlpPasswordSprayingChallenge)
+    }
+    if (utils.notSolved(challenges.oauthUserPasswordChallenge) && req.body.email === 'bjoern.kimminich@googlemail.com' && req.body.password === 'bW9jLmxpYW1lbGdvb2dAaGNpbmltbWlrLm5yZW9qYg==') {
       utils.solve(challenges.oauthUserPasswordChallenge)
     }
     models.sequelize.query('SELECT * FROM Users WHERE email = \'' + (req.body.email || '') + '\' AND password = \'' + insecurity.hash(req.body.password || '') + '\'', { model: models.User, plain: true })
@@ -44,12 +50,22 @@ module.exports = function login () {
 
         const rememberedEmail = insecurity.userEmailFrom(req)
         if (rememberedEmail && req.body.oauth) {
-          models.User.find({ where: { email: rememberedEmail } }).then(rememberedUser => {
+          models.User.findOne({ where: { email: rememberedEmail } }).then(rememberedUser => {
             user = utils.queryResultToJson(rememberedUser)
             if (utils.notSolved(challenges.loginCisoChallenge) && user.data.id === users.ciso.id) {
               utils.solve(challenges.loginCisoChallenge)
             }
             afterLogin(user, res, next)
+          })
+        } else if (user.data && user.data.id && user.data.totpSecret !== '') {
+          res.status(401).json({
+            status: 'totp_token_requried',
+            data: {
+              tmpToken: insecurity.authorize({
+                userId: user.data.id,
+                type: 'password_valid_needs_second_factor_token'
+              })
+            }
           })
         } else if (user.data && user.data.id) {
           afterLogin(user, res, next)

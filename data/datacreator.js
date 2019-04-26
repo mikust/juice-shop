@@ -4,6 +4,8 @@ const datacache = require('./datacache')
 const config = require('config')
 const utils = require('../lib/utils')
 const mongodb = require('./mongodb')
+const insecurity = require('../lib/insecurity')
+const logger = require('../lib/logger')
 
 const fs = require('fs')
 const path = require('path')
@@ -16,22 +18,22 @@ function loadStaticData (file) {
   const filePath = path.resolve('./data/static/' + file + '.yml')
   return readFile(filePath, 'utf8')
     .then(safeLoad)
-    .catch(() => console.error('Could not open file: "' + filePath + '"'))
+    .catch(() => logger.error('Could not open file: "' + filePath + '"'))
 }
 
 module.exports = async () => {
   const creators = [
+    createSecurityQuestions,
     createUsers,
     createChallenges,
     createRandomFakeUsers,
     createProducts,
     createBaskets,
     createBasketItems,
-    createFeedback,
+    createAnonymousFeedback,
     createComplaints,
-    createRecycles,
-    createSecurityQuestions,
-    createSecurityAnswers
+    createRecycleItems,
+    createOrders
   ]
 
   for (const creator of creators) {
@@ -46,22 +48,22 @@ async function createChallenges () {
 
   await Promise.all(
     challenges.map(async ({ name, category, description, difficulty, hint, hintUrl, key, disabledEnv }) => {
+      let effectiveDisabledEnv = utils.determineDisabledContainerEnv(disabledEnv)
       try {
         const challenge = await models.Challenge.create({
           key,
           name,
           category,
-          description: disabledEnv ? (description + ' <em>(This challenge is not available on: ' + disabledEnv + ')</em>') : description,
+          description: effectiveDisabledEnv ? (description + ' <em>(This challenge is <strong>' + (config.get('challenges.safetyOverride') ? 'potentially harmful' : 'not available') + '</strong> on ' + effectiveDisabledEnv + '!)</em>') : description,
           difficulty,
           solved: false,
           hint: showHints ? hint : null,
           hintUrl: showHints ? hintUrl : null,
-          disabledEnv: utils.determineDisabledContainerEnv(disabledEnv)
+          disabledEnv: config.get('challenges.safetyOverride') ? null : effectiveDisabledEnv
         })
         datacache.challenges[key] = challenge
       } catch (err) {
-        console.error(`Could not insert Challenge ${name}`)
-        console.error(err)
+        logger.error(`Could not insert Challenge ${name}: ${err.message}`)
       }
     })
   )
@@ -71,17 +73,22 @@ async function createUsers () {
   const users = await loadStaticData('users')
 
   await Promise.all(
-    users.map(async ({ email, password, customDomain, key }) => {
+    users.map(async ({ username, email, password, customDomain, key, isAdmin, profileImage, securityQuestion, feedback, totpSecret: totpSecret = '' }) => {
       try {
         const completeEmail = customDomain ? email : `${email}@${config.get('application.domain')}`
         const user = await models.User.create({
+          username,
           email: completeEmail,
-          password
+          password,
+          isAdmin,
+          profileImage: profileImage || 'default.svg',
+          totpSecret
         })
         datacache.users[key] = user
+        if (securityQuestion) await createSecurityAnswer(user.id, securityQuestion.id, securityQuestion.answer)
+        if (feedback) await createFeedback(user.id, feedback.comment, feedback.rating)
       } catch (err) {
-        console.error(`Could not insert User ${name}`)
-        console.error(err)
+        logger.error(`Could not insert User ${key}: ${err.message}`)
       }
     })
   )
@@ -121,7 +128,7 @@ function createProducts () {
     if (utils.startsWith(product.image, 'http')) {
       const imageUrl = product.image
       product.image = decodeURIComponent(product.image.substring(product.image.lastIndexOf('/') + 1))
-      utils.downloadToFile(imageUrl, 'app/public/images/products/' + product.image)
+      utils.downloadToFile(imageUrl, 'frontend/dist/frontend/assets/public/images/products/' + product.image)
     }
 
     // set deleted at values if configured
@@ -135,6 +142,7 @@ function createProducts () {
 
   // add Challenge specific information
   const chrismasChallengeProduct = products.find(({ useForChristmasSpecialChallenge }) => useForChristmasSpecialChallenge)
+  const pastebinLeakChallengeProduct = products.find(({ keywordsForPastebinDataLeakChallenge }) => keywordsForPastebinDataLeakChallenge)
   const tamperingChallengeProduct = products.find(({ urlForProductTamperingChallenge }) => urlForProductTamperingChallenge)
   const blueprintRetrivalChallengeProduct = products.find(({ fileForRetrieveBlueprintChallenge }) => fileForRetrieveBlueprintChallenge)
 
@@ -142,26 +150,34 @@ function createProducts () {
   chrismasChallengeProduct.deletedAt = '2014-12-27 00:00:00.000 +00:00'
   tamperingChallengeProduct.description += ' <a href="' + tamperingChallengeProduct.urlForProductTamperingChallenge + '" target="_blank">More...</a>'
   tamperingChallengeProduct.deletedAt = null
+  pastebinLeakChallengeProduct.description += ' (This product is unsafe! We plan to remove it from the stock!)'
+  pastebinLeakChallengeProduct.deletedAt = '2019-02-1 00:00:00.000 +00:00'
 
   let blueprint = blueprintRetrivalChallengeProduct.fileForRetrieveBlueprintChallenge
   if (utils.startsWith(blueprint, 'http')) {
     const blueprintUrl = blueprint
     blueprint = decodeURIComponent(blueprint.substring(blueprint.lastIndexOf('/') + 1))
-    utils.downloadToFile(blueprintUrl, 'app/public/images/products/' + blueprint)
+    utils.downloadToFile(blueprintUrl, 'frontend/dist/frontend/assets/public/images/products/' + blueprint)
   }
-  datacache.retrieveBlueprintChallengeFile = blueprint
+  datacache.retrieveBlueprintChallengeFile = blueprint // TODO Do not cache separately but load from config where needed (same as keywordsForPastebinDataLeakChallenge)
 
   return Promise.all(
     products.map(
       ({ reviews = [], useForChristmasSpecialChallenge = false, urlForProductTamperingChallenge = false, ...product }) =>
         models.Product.create(product).catch(
           (err) => {
-            console.error(`Could not insert Product ${product.name}`)
-            console.error(err)
+            logger.error(`Could not insert Product ${product.name}: ${err.message}`)
           }
         ).then((persistedProduct) => {
           if (useForChristmasSpecialChallenge) { datacache.products.christmasSpecial = persistedProduct }
-          if (urlForProductTamperingChallenge) { datacache.products.osaft = persistedProduct }
+          if (urlForProductTamperingChallenge) {
+            datacache.products.osaft = persistedProduct
+            datacache.challenges.changeProductChallenge.update({ description: customizeChangeProductChallenge(
+              datacache.challenges.changeProductChallenge.description,
+              config.get('challenges.overwriteUrlForProductTamperingChallenge'),
+              persistedProduct)
+            })
+          }
           return persistedProduct
         })
           .then(({ id }) =>
@@ -170,16 +186,23 @@ function createProducts () {
                 mongodb.reviews.insert({
                   message: text,
                   author: `${author}@${config.get('application.domain')}`,
-                  product: id
+                  product: id,
+                  likesCount: 0,
+                  likedBy: []
                 }).catch((err) => {
-                  console.error(`Could not insert Product Review ${text}`)
-                  console.error(err)
+                  logger.error(`Could not insert Product Review ${text}: ${err.message}`)
                 })
               )
             )
           )
     )
   )
+
+  function customizeChangeProductChallenge (description, customUrl, customProduct) {
+    let customDescription = description.replace(/OWASP SSL Advanced Forensic Tool \(O-Saft\)/g, customProduct.name)
+    customDescription = customDescription.replace('https://owasp.slack.com', customUrl)
+    return customDescription
+  }
 }
 
 function createBaskets () {
@@ -192,8 +215,7 @@ function createBaskets () {
   return Promise.all(
     baskets.map(basket => {
       models.Basket.create(basket).catch((err) => {
-        console.error(`Could not insert Basket for UserId ${basket.UserId}`)
-        console.error(err)
+        logger.error(`Could not insert Basket for UserId ${basket.UserId}: ${err.message}`)
       })
     })
   )
@@ -231,25 +253,14 @@ function createBasketItems () {
   return Promise.all(
     basketItems.map(basketItem => {
       models.BasketItem.create(basketItem).catch((err) => {
-        console.error(`Could not insert BasketItem for BasketId ${basketItem.BasketId}`)
-        console.error(err)
+        logger.error(`Could not insert BasketItem for BasketId ${basketItem.BasketId}: ${err.message}`)
       })
     })
   )
 }
 
-function createFeedback () {
+function createAnonymousFeedback () {
   const feedbacks = [
-    {
-      UserId: 1,
-      comment: 'I love this shop! Best products in town! Highly recommended!',
-      rating: 5
-    },
-    {
-      UserId: 2,
-      comment: 'Great shop! Awesome service!',
-      rating: 4
-    },
     {
       comment: 'Incompetent customer support! Can\'t even upload photo of broken purchase!<br><em>Support Team: Sorry, only order confirmation PDFs can be attached to complaints!</em>',
       rating: 2
@@ -265,20 +276,18 @@ function createFeedback () {
     {
       comment: 'Keep up the good work!',
       rating: 3
-    },
-    {
-      UserId: 3,
-      comment: 'Nothing useful available here!',
-      rating: 1
     }
   ]
 
   return Promise.all(
-    feedbacks.map((feedback) => models.Feedback.create(feedback).catch((err) => {
-      console.error(`Could not insert Feedback ${feedback.comment}`)
-      console.error(err)
-    }))
+    feedbacks.map((feedback) => createFeedback(null, feedback.comment, feedback.rating))
   )
+}
+
+function createFeedback (UserId, comment, rating) {
+  return models.Feedback.create({ UserId, comment, rating }).catch((err) => {
+    logger.error(`Could not insert Feedback ${comment} mapped to UserId ${UserId}: ${err.message}`)
+  })
 }
 
 function createComplaints () {
@@ -286,21 +295,86 @@ function createComplaints () {
     UserId: 3,
     message: 'I\'ll build my own eCommerce business! With Black Jack! And Hookers!'
   }).catch((err) => {
-    console.error(`Could not insert Complaint`)
-    console.error(err)
+    logger.error(`Could not insert Complaint: ${err.message}`)
   })
 }
 
-function createRecycles () {
-  return models.Recycle.create({
-    UserId: 2,
-    quantity: 800,
-    address: 'Starfleet HQ, 24-593 Federation Drive, San Francisco, CA',
-    date: '2270-01-17',
-    isPickup: true
-  }).catch((err) => {
-    console.error(`Could not insert Recycling Model`)
-    console.error(err)
+function createRecycleItems () {
+  const recycleItems = [
+    {
+      id: 42,
+      UserId: 2,
+      quantity: 800,
+      address: 'Starfleet HQ, 24-593 Federation Drive, San Francisco, CA',
+      date: '2270-01-17',
+      isPickup: true
+    },
+    {
+      id: 698,
+      UserId: 3,
+      quantity: 1320,
+      address: '22/7 Winston Street, Sydney, Australia, Earth',
+      date: '2006-01-14',
+      isPickup: true
+    },
+    {
+      UserId: 4,
+      quantity: 120,
+      address: '999 Norton Street, Norfolk, USA',
+      date: '2018-04-16',
+      isPickup: true
+    },
+    {
+      UserId: 1,
+      quantity: 300,
+      address: '6-10 Leno Towers, Eastern Empire, CA',
+      date: '2018-01-17',
+      isPickup: true
+    },
+    {
+      UserId: 6,
+      quantity: 350,
+      address: '88/2 Lindenburg Apartments, East Street, Oslo, Norway',
+      date: '2018-03-17',
+      isPickup: true
+    },
+    {
+      UserId: 2,
+      quantity: 200,
+      address: '222, East Central Avenue, Adelaide, New Zealand',
+      date: '2018-07-17',
+      isPickup: true
+    },
+    {
+      UserId: 4,
+      quantity: 140,
+      address: '100 Yellow Peak Road, West Central New York, USA',
+      date: '2018-03-19',
+      isPickup: true
+    },
+    {
+      UserId: 3,
+      quantity: 150,
+      address: '15 Riviera Road, Western Frontier, Menlo Park CA',
+      date: '2018-05-12',
+      isPickup: true
+    },
+    {
+      UserId: 8,
+      quantity: 500,
+      address: '712 Irwin Avenue, River Bank Colony, Easter Frontier, London, UK',
+      date: '2019-02-18',
+      isPickup: true
+    }
+  ]
+  return Promise.all(
+    recycleItems.map((item) => createRecycles(item))
+  )
+}
+
+function createRecycles (item) {
+  return models.Recycle.create(item).catch((err) => {
+    logger.error(`Could not insert Recycling Model: ${err.message}`)
   })
 }
 
@@ -320,47 +394,72 @@ function createSecurityQuestions () {
 
   return Promise.all(
     questions.map((question) => models.SecurityQuestion.create({ question }).catch((err) => {
-      console.error(`Could not insert SecurityQuestion ${question}`)
-      console.error(err)
+      logger.error(`Could not insert SecurityQuestion ${question}: ${err.message}`)
     }))
   )
 }
 
-function createSecurityAnswers () {
-  const answers = [{
-    SecurityQuestionId: 2,
-    UserId: 1,
-    answer: '@xI98PxDO+06!'
-  }, {
-    SecurityQuestionId: 1,
-    UserId: 2,
-    answer: 'Samuel' // https://en.wikipedia.org/wiki/James_T._Kirk
-  }, {
-    SecurityQuestionId: 10,
-    UserId: 3,
-    answer: 'Stop\'n\'Drop' // http://futurama.wikia.com/wiki/Suicide_booth
-  }, {
-    SecurityQuestionId: 9,
-    UserId: 4,
-    answer: 'West-2082' // http://www.alte-postleitzahlen.de/uetersen
-  }, {
-    SecurityQuestionId: 7,
-    UserId: 5,
-    answer: 'Brd?j8sEMziOvvBf§Be?jFZ77H?hgm'
-  }, {
-    SecurityQuestionId: 10,
-    UserId: 6,
-    answer: 'SC OLEA SRL' // http://www.olea.com.ro/
-  }, {
-    SecurityQuestionId: 7,
-    UserId: 7,
-    answer: '5N0wb41L' // http://rickandmorty.wikia.com/wiki/Snuffles
-  }]
+function createSecurityAnswer (UserId, SecurityQuestionId, answer) {
+  return models.SecurityAnswer.create({ SecurityQuestionId, UserId, answer }).catch((err) => {
+    logger.error(`Could not insert SecurityAnswer ${answer} mapped to UserId ${UserId}: ${err.message}`)
+  })
+}
+
+function createOrders () {
+  const email = 'admin@' + config.get('application.domain')
+  const products = config.get('products')
+  const basket1Products = [
+    {
+      quantity: 3,
+      name: products[0].name,
+      price: products[0].price,
+      total: products[0].price * 3
+    },
+    {
+      quantity: 1,
+      name: products[1].name,
+      price: products[1].price,
+      total: products[1].price * 1
+    }
+  ]
+
+  const basket2Products = [
+    {
+      quantity: 3,
+      name: products[2].name,
+      price: products[2].price,
+      total: products[2].price * 3
+    }
+  ]
+
+  const orders = [
+    {
+      orderId: insecurity.hash(email).slice(0, 4) + '-' + utils.randomHexString(16),
+      email: (email ? email.replace(/[aeiou]/gi, '*') : undefined),
+      totalPrice: basket1Products[0].total + basket1Products[1].total,
+      products: basket1Products,
+      eta: Math.floor((Math.random() * 5) + 1).toString()
+    },
+    {
+      orderId: insecurity.hash(email).slice(0, 4) + '-' + utils.randomHexString(16),
+      email: (email ? email.replace(/[aeiou]/gi, '*') : undefined),
+      totalPrice: basket2Products[0].total,
+      products: basket2Products,
+      eta: Math.floor((Math.random() * 5) + 1).toString()
+    }
+  ]
 
   return Promise.all(
-    answers.map(answer => models.SecurityAnswer.create(answer).catch(err => {
-      console.error(`Could not insert SecurityAnswer for UserId ${answer.UserId}`)
-      console.error(err)
-    }))
+    orders.map(({ orderId, email, totalPrice, products, eta }) =>
+      mongodb.orders.insert({
+        orderId: orderId,
+        email: email,
+        totalPrice: totalPrice,
+        products: products,
+        eta: eta
+      }).catch((err) => {
+        logger.error(`Could not insert Order ${orderId}: ${err.message}`)
+      })
+    )
   )
 }

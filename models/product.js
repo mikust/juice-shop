@@ -8,7 +8,7 @@ module.exports = (sequelize, { STRING, DECIMAL }) => {
     description: {
       type: STRING,
       set (description) {
-        if (utils.notSolved(challenges.restfulXssChallenge) && utils.contains(description, '<script>alert("XSS")</script>')) {
+        if (utils.notSolved(challenges.restfulXssChallenge) && utils.contains(description, '<iframe src="javascript:alert(`xss`)">')) {
           utils.solve(challenges.restfulXssChallenge)
         }
         this.setDataValue('description', description)
@@ -19,7 +19,7 @@ module.exports = (sequelize, { STRING, DECIMAL }) => {
   }, { paranoid: true })
 
   Product.associate = ({ Basket, BasketItem }) => {
-    Product.belongsToMany(Basket, { through: BasketItem })
+    Product.belongsToMany(Basket, { through: BasketItem, foreignKey: { name: 'ProductId', noUpdate: true } })
   }
 
   return Product
